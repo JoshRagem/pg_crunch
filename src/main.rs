@@ -18,5 +18,4 @@ fn main() {
             Err(error) => println!("error: {}", error),
         }
     }
-    println!("Hello, world!");
 }

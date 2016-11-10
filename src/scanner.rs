@@ -29,10 +29,8 @@ pub fn init_state() -> CrunchState {
 }
 
 pub fn process_line(line:String, state:CrunchState) -> CrunchState {
-    //println!("line: {}", line);
     match state {
         CrunchState::Scanning(mut pid_to_query, mut csv_writer) => {
-            //println!("scanning");
             match analyze_line(line) {
                 MatchResult::Ignore => CrunchState::Scanning(pid_to_query, csv_writer),
                 MatchResult::QueryStart(pid, query_begin) => {
@@ -47,10 +45,9 @@ pub fn process_line(line:String, state:CrunchState) -> CrunchState {
                             let qhash = hasher.finish();
                             let result = csv_writer.encode((pid, duration, qhash, &full_query));
                             assert!(result.is_ok());
-                            //println!("pid={} duration={} query={}", pid, duration, full_query)
                         },
                         None => {
-                            //println!("pid={} duration={} dangling duration", pid, duration)
+                            // dangling duration
                         }
                     };
                     CrunchState::Scanning(pid_to_query, csv_writer)
@@ -58,7 +55,6 @@ pub fn process_line(line:String, state:CrunchState) -> CrunchState {
             }
         },
         CrunchState::CurrentQuery(mut query_parts, pid, mut pid_to_query, csv_writer) => {
-            //println!("query building");
             if !REGLS.is_match(&line) {
                 query_parts.push(line);
                 CrunchState::CurrentQuery(query_parts, pid, pid_to_query, csv_writer)
@@ -73,30 +69,24 @@ pub fn process_line(line:String, state:CrunchState) -> CrunchState {
 
 fn analyze_line(line:String) -> MatchResult {
     if REGLS.is_match(&line) {
-        //println!("good line");
         match REPID.captures_iter(&line).nth(0) {
             Some(cap) => {
                 let pid: &str = cap.at(1).unwrap();
                 if REDURATION.is_match(&line) {
-                    //println!("good duration");
                     let duration: &str = REDURATION.captures_iter(&line).nth(0).unwrap().at(1).unwrap();
                     MatchResult::Duration(pid.parse::<i32>().unwrap(), duration.to_string())
                 } else if RESTATEMENT.is_match(&line) {
-                    //println!("good statement");
                     let statement: &str = RESTATEMENT.captures_iter(&line).nth(0).unwrap().at(1).unwrap();
                     MatchResult::QueryStart(pid.parse::<i32>().unwrap(), statement.to_string())
                 } else {
-                    //println!("ignore?");
                     MatchResult::Ignore
                 }
             },
             None => {
-                //println!("no pid");
                 MatchResult::Ignore
             }
         }
     } else {
-        //println!("good ignore");
         MatchResult::Ignore
     }
 }
