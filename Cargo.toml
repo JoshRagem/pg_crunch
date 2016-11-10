@@ -1,0 +1,9 @@
+[package]
+name = "pg_crunch"
+version = "0.1.0"
+authors = ["Joshua Barney <barney@whoop.com>"]
+
+[dependencies]
+regex = "0.1.80"
+lazy_static = "0.2.1"
+csv = "0.14.7"
