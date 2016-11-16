@@ -1,19 +1,67 @@
-use std::hash::{Hash, SipHasher, Hasher};
+use std::hash::{Hash, Hasher};
+use std::collections::hash_map::DefaultHasher;
 use regex::Regex;
 use std::collections::HashMap;
-use std::string::String;
-use std;
+use std::io::{Stdout, stdout};
 use csv::Writer;
 
 pub enum CrunchState {
-    Scanning(HashMap<i32,String>, Writer<std::io::Stdout>),
-    CurrentQuery(Vec<String>, i32, HashMap<i32,String>, Writer<std::io::Stdout>)
+    Scanning(HashMap<i32,String>, Writer<Stdout>),
+    CurrentQuery(Vec<String>, i32, HashMap<i32,String>, Writer<Stdout>)
 }
 
-enum MatchResult {
-    Ignore,
-    QueryStart(i32, String),
-    Duration(i32, String)
+fn hash_query(query_string: &str) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    query_string.hash(&mut hasher);
+    hasher.finish()
+}
+
+impl CrunchState {
+    pub fn new() -> CrunchState {
+        let csv_writer = Writer::from_writer(stdout());
+        CrunchState::Scanning(HashMap::new(), csv_writer)
+    }
+
+    pub fn process_line(self, line:String) -> CrunchState {
+        use self::CrunchState::*;
+        use self::MatchResult::*;
+
+        match self {
+            Scanning(mut pid_to_query, mut csv_writer) => {
+                match analyze_line(&line) {
+                    Ignore => Scanning(pid_to_query, csv_writer),
+                    QueryStart(pid, query_begin) => {
+                        let query_parts = vec![query_begin];
+                        CurrentQuery(query_parts, pid, pid_to_query, csv_writer)
+                    },
+                    Duration(pid, duration) => {
+                        match pid_to_query.remove(&pid) {
+                            Some(full_query) => {
+                                let qhash = hash_query(&full_query);
+                                let result = csv_writer.encode((pid, duration, qhash, &full_query));
+                                assert!(result.is_ok())
+                            },
+                            None => {
+                                // dangling duration
+                            }
+                        };
+                        Scanning(pid_to_query, csv_writer)
+                    }
+                }
+            },
+            CurrentQuery(mut query_parts, pid, mut pid_to_query, csv_writer) => {
+                if !REGLS.is_match(&line) {
+                    query_parts.push(line);
+                    CurrentQuery(query_parts, pid, pid_to_query, csv_writer)
+                } else {
+                    let full_query = query_parts.iter().fold("".to_string(), |acc, s| acc + s);
+                    pid_to_query.insert(pid, full_query);
+                    let next_state = Scanning(pid_to_query, csv_writer);
+                    next_state.process_line(line)
+                }
+            }
+        }
+    }
 }
 
 lazy_static! {
@@ -23,70 +71,34 @@ lazy_static! {
     static ref RESTATEMENT: Regex = Regex::new(r"(?:execute.*|statement):(.*)").unwrap();
 }
 
-pub fn init_state() -> CrunchState {
-    let csv_writer: Writer<std::io::Stdout> = Writer::from_writer(std::io::stdout());
-    CrunchState::Scanning(HashMap::new(), csv_writer)
+enum MatchResult {
+    Ignore,
+    QueryStart(i32, String),
+    Duration(i32, String)
 }
 
-pub fn process_line(line:String, state:CrunchState) -> CrunchState {
-    match state {
-        CrunchState::Scanning(mut pid_to_query, mut csv_writer) => {
-            match analyze_line(line) {
-                MatchResult::Ignore => CrunchState::Scanning(pid_to_query, csv_writer),
-                MatchResult::QueryStart(pid, query_begin) => {
-                    let query_parts = vec![query_begin];
-                    CrunchState::CurrentQuery(query_parts, pid, pid_to_query, csv_writer)
-                },
-                MatchResult::Duration(pid, duration) => {
-                    match pid_to_query.remove(&pid) {
-                        Some(full_query) => {
-                            let mut hasher = SipHasher::new();
-                            full_query.hash(&mut hasher);
-                            let qhash = hasher.finish();
-                            let result = csv_writer.encode((pid, duration, qhash, &full_query));
-                            assert!(result.is_ok());
-                        },
-                        None => {
-                            // dangling duration
-                        }
-                    };
-                    CrunchState::Scanning(pid_to_query, csv_writer)
-                }
-            }
-        },
-        CrunchState::CurrentQuery(mut query_parts, pid, mut pid_to_query, csv_writer) => {
-            if !REGLS.is_match(&line) {
-                query_parts.push(line);
-                CrunchState::CurrentQuery(query_parts, pid, pid_to_query, csv_writer)
-            } else {
-                let full_query = query_parts.iter().fold("".to_string(), |acc, s| acc + s);
-                pid_to_query.insert(pid, full_query);
-                process_line(line, CrunchState::Scanning(pid_to_query, csv_writer))
-            }
-        }
-    }
-}
+fn analyze_line(line: &str) -> MatchResult {
+    use self::MatchResult::*;
 
-fn analyze_line(line:String) -> MatchResult {
     if REGLS.is_match(&line) {
         match REPID.captures_iter(&line).nth(0) {
             Some(cap) => {
                 let pid: &str = cap.at(1).unwrap();
                 if REDURATION.is_match(&line) {
                     let duration: &str = REDURATION.captures_iter(&line).nth(0).unwrap().at(1).unwrap();
-                    MatchResult::Duration(pid.parse::<i32>().unwrap(), duration.to_string())
+                    Duration(pid.parse::<i32>().unwrap(), duration.to_string())
                 } else if RESTATEMENT.is_match(&line) {
                     let statement: &str = RESTATEMENT.captures_iter(&line).nth(0).unwrap().at(1).unwrap();
-                    MatchResult::QueryStart(pid.parse::<i32>().unwrap(), statement.to_string())
+                    QueryStart(pid.parse::<i32>().unwrap(), statement.to_string())
                 } else {
-                    MatchResult::Ignore
+                    Ignore
                 }
             },
             None => {
-                MatchResult::Ignore
+                Ignore
             }
         }
     } else {
-        MatchResult::Ignore
+        Ignore
     }
 }
