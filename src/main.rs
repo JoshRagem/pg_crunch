@@ -1,21 +1,20 @@
 extern crate pg_crunch;
 
 use std::io;
-use pg_crunch::scanner;
+use std::io::prelude::*;
+use pg_crunch::scanner::CrunchState;
 
 fn main() {
-    let mut done: bool = false;
-    let mut state: pg_crunch::scanner::CrunchState = scanner::init_state();
-    while !done {
-        let mut input: String = String::new();
-        match io::stdin().read_line(&mut input) {
-            Ok(0) => {
-                done = true;
+    let mut state = CrunchState::new();
+    let stdin = io::stdin();
+    for line in stdin.lock().lines() {
+        match line {
+            Ok(line) => {
+                state = state.process_line(line)
+            },
+            Err(error) => {
+                println!("error: {}", error)
             }
-            Ok(_) => {
-                state = scanner::process_line(input, state);
-            }
-            Err(error) => println!("error: {}", error),
         }
     }
 }
