@@ -50,11 +50,12 @@ impl CrunchState {
                 }
             },
             CurrentQuery(mut query_parts, pid, mut pid_to_query, csv_writer) => {
-                if !REGLS.is_match(&line) {
-                    query_parts.push(line);
+                if !LINE_START.is_match(&line) {
+                    let stripped = strip_spaces(&line);
+                    query_parts.push(stripped);
                     CurrentQuery(query_parts, pid, pid_to_query, csv_writer)
                 } else {
-                    let full_query = query_parts.iter().fold("".to_string(), |acc, s| acc + s);
+                    let full_query = query_parts.join("");
                     pid_to_query.insert(pid, full_query);
                     let next_state = Scanning(pid_to_query, csv_writer);
                     next_state.process_line(line)
@@ -65,10 +66,11 @@ impl CrunchState {
 }
 
 lazy_static! {
-    static ref REGLS: Regex = Regex::new(r"^2016").unwrap();
-    static ref REPID: Regex = Regex::new(r"\d{2,3}\((\d+)\):").unwrap();
-    static ref REDURATION: Regex = Regex::new(r"duration: ([0-9.]+) ms").unwrap();
-    static ref RESTATEMENT: Regex = Regex::new(r"(?:execute.*|statement):(.*)").unwrap();
+    static ref LINE_START: Regex = Regex::new(r"^\d{4}-\d{2}-\d{2} ").unwrap();
+    static ref PID: Regex = Regex::new(r"\d{2,3}\((\d+)\):").unwrap();
+    static ref DURATION: Regex = Regex::new(r"duration: ([0-9.]+) ms").unwrap();
+    static ref STATEMENT: Regex = Regex::new(r"(?:execute.*|statement): (.*)").unwrap();
+    static ref MULTIPLE_SPACES: Regex = Regex::new(r"\s+").unwrap();
 }
 
 enum MatchResult {
@@ -77,19 +79,24 @@ enum MatchResult {
     Duration(i32, String)
 }
 
+fn strip_spaces(line: &str) -> String {
+    MULTIPLE_SPACES.replace_all(line, " ")
+}
+
+
 fn analyze_line(line: &str) -> MatchResult {
     use self::MatchResult::*;
 
-    if REGLS.is_match(&line) {
-        match REPID.captures_iter(&line).nth(0) {
+    if LINE_START.is_match(&line) {
+        match PID.captures_iter(&line).nth(0) {
             Some(cap) => {
                 let pid: &str = cap.at(1).unwrap();
-                if REDURATION.is_match(&line) {
-                    let duration: &str = REDURATION.captures_iter(&line).nth(0).unwrap().at(1).unwrap();
+                if DURATION.is_match(&line) {
+                    let duration: &str = DURATION.captures_iter(&line).nth(0).unwrap().at(1).unwrap();
                     Duration(pid.parse::<i32>().unwrap(), duration.to_string())
-                } else if RESTATEMENT.is_match(&line) {
-                    let statement: &str = RESTATEMENT.captures_iter(&line).nth(0).unwrap().at(1).unwrap();
-                    QueryStart(pid.parse::<i32>().unwrap(), statement.to_string())
+                } else if STATEMENT.is_match(&line) {
+                    let statement: &str = STATEMENT.captures_iter(&line).nth(0).unwrap().at(1).unwrap();
+                    QueryStart(pid.parse::<i32>().unwrap(), strip_spaces(statement))
                 } else {
                     Ignore
                 }
