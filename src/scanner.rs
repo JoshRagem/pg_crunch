@@ -1,13 +1,14 @@
-use std::hash::{Hash, Hasher};
-use std::collections::hash_map::DefaultHasher;
+
+use csv::Writer;
 use regex::Regex;
 use std::collections::HashMap;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::io::{Stdout, stdout};
-use csv::Writer;
 
 pub enum CrunchState {
-    Scanning(HashMap<i32,String>, Writer<Stdout>),
-    CurrentQuery(Vec<String>, i32, HashMap<i32,String>, Writer<Stdout>)
+    Scanning(HashMap<i32, String>, Writer<Stdout>),
+    CurrentQuery(Vec<String>, i32, HashMap<i32, String>, Writer<Stdout>),
 }
 
 fn hash_query(query_string: &str) -> u64 {
@@ -22,7 +23,7 @@ impl CrunchState {
         CrunchState::Scanning(HashMap::new(), csv_writer)
     }
 
-    pub fn process_line(self, line:String) -> CrunchState {
+    pub fn process_line(self, line: String) -> CrunchState {
         use self::CrunchState::*;
         use self::MatchResult::*;
 
@@ -43,10 +44,10 @@ impl CrunchState {
                             },
                             None => {
                                 // dangling duration
-                            }
+                            },
                         };
                         Scanning(pid_to_query, csv_writer)
-                    }
+                    },
                 }
             },
             CurrentQuery(mut query_parts, pid, mut pid_to_query, csv_writer) => {
@@ -60,7 +61,7 @@ impl CrunchState {
                     let next_state = Scanning(pid_to_query, csv_writer);
                     next_state.process_line(line)
                 }
-            }
+            },
         }
     }
 }
@@ -76,7 +77,7 @@ lazy_static! {
 enum MatchResult {
     Ignore,
     QueryStart(i32, String),
-    Duration(i32, String)
+    Duration(i32, String),
 }
 
 fn strip_spaces(line: &str) -> String {
@@ -101,9 +102,7 @@ fn analyze_line(line: &str) -> MatchResult {
                     Ignore
                 }
             },
-            None => {
-                Ignore
-            }
+            None => Ignore,
         }
     } else {
         Ignore
